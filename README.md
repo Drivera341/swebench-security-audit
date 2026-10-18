@@ -2,6 +2,8 @@
 
 **A static audit of 6,000 agent-generated patches on SWE-bench Verified.**
 
+*Independent technical report by Daniel Rivera, October 2026. Not peer reviewed.*
+
 📄 [Paper (PDF)](paper/main.pdf) · 🌐 [Project page](https://drivera341.github.io/swebench-security-audit/) · 📊 [Results data](data/results/)
 
 Coding agents are graded, and increasingly deployed, on whether their patches pass tests. Tests check intended behavior. They don't check whether a patch also introduces a security weakness, silences errors instead of fixing them, or rewrites the tests themselves.
@@ -50,6 +52,10 @@ Every number in the paper text is a macro generated from the data in step 5, so 
 - **Patches and resolution status:** the public SWE-bench leaderboard submissions (`swe-bench-submissions` S3 bucket and the [swe-bench/experiments](https://github.com/swe-bench/experiments) repo). The per-model resolve rates reproduced here match the published leaderboard exactly for all 12 models.
 - **Excluded:** Gemini 3 Pro. Its published per-instance results mark every instance unresolved, while the leaderboard reports 69.6%.
 - **Manual review:** [`data/triage/security_model_only.csv`](data/triage/security_model_only.csv) gives the label and rationale for every model-only security finding.
+
+## Independence
+
+This is independent work. It isn't a thesis or course project, and it wasn't supervised, funded, reviewed, or endorsed by any university, employer, or other organization.
 
 ## Use of AI assistance
 
