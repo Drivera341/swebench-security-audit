@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>What the Tests Don't See</title>
+  <meta name="description" content="A static audit of 6,000 agent-generated patches on SWE-bench Verified: security findings, silent exception handlers, and test edits that test-based grading cannot see.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+    :root {
+      --bg: #fcfcfb; --surface: #ffffff; --border: #e4e3df;
+      --text: #0b0b0b; --text-2: #52514e; --accent: #2a78d6; --accent-ink: #1c5cab;
+      --human: #eb6834; --code-bg: #f3f2ef;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #141413; --surface: #1a1a19; --border: #383835;
+        --text: #f0efec; --text-2: #c3c2b7; --accent: #3987e5; --accent-ink: #86b6ef;
+        --human: #d95926; --code-bg: #262624;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #141413; --surface: #1a1a19; --border: #383835;
+      --text: #f0efec; --text-2: #c3c2b7; --accent: #3987e5; --accent-ink: #86b6ef;
+      --human: #d95926; --code-bg: #262624;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.65 Inter, system-ui, sans-serif; }
+    main { max-width: 820px; margin: 0 auto; padding: 56px 16px 80px; }
+    h1 { font-size: clamp(1.9rem, 5vw, 2.6rem); line-height: 1.15; margin: 0 0 8px; letter-spacing: -0.02em; }
+    .subtitle { font-size: 1.15rem; color: var(--text-2); margin: 0 0 20px; }
+    .author { color: var(--text-2); margin: 0 0 24px; }
+    .author a { color: inherit; }
+    .links { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 40px; }
+    .links a { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 999px;
+      border: 1px solid var(--border); color: var(--text); text-decoration: none; font-weight: 500; font-size: 0.95rem; background: var(--surface); }
+    .links a.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .links a:hover { border-color: var(--accent); }
+    h2 { font-size: 1.3rem; margin: 48px 0 12px; letter-spacing: -0.01em; }
+    p { margin: 0 0 14px; }
+    .tldr { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 8px; padding: 16px 20px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 24px 0 8px; }
+    .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .stat .value { font-size: 1.7rem; font-weight: 600; letter-spacing: -0.02em; }
+    .stat .label { font-size: 0.85rem; color: var(--text-2); line-height: 1.4; }
+    figure { margin: 24px 0; }
+    figure .frame { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow-x: auto; }
+    figure img { display: block; width: 100%; height: auto; min-width: 0; }
+    figure.narrow .frame { max-width: 480px; }
+    figcaption { font-size: 0.88rem; color: var(--text-2); margin-top: 8px; }
+    ul.findings { padding-left: 20px; }
+    ul.findings li { margin-bottom: 10px; }
+    code { font-family: "JetBrains Mono", monospace; font-size: 0.88em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+    pre { background: var(--code-bg); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; }
+    pre code { background: none; padding: 0; }
+    a { color: var(--accent-ink); }
+    footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 0.88rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>What the Tests Don't See</h1>
+  <p class="subtitle">A static audit of 6,000 agent-generated patches on SWE-bench Verified</p>
+  <p class="author"><a href="https://drivera341.github.io/Portfolio/">Daniel Rivera</a> · Franciscan University of Steubenville · October 2026</p>
+
+  <div class="links">
+    <a class="primary" href="paper.pdf">📄 Paper (PDF)</a>
+    <a href="https://github.com/Drivera341/swebench-security-audit">💻 Code &amp; data</a>
+    <a href="https://github.com/Drivera341/swebench-security-audit/tree/main/data/results">📊 Results CSVs</a>
+  </div>
+
+  <div class="tldr">
+    <p><strong>TL;DR.</strong> Coding agents are graded on whether their patches pass tests. I audited the patches that 12 frontier models submitted to SWE-bench Verified, all under the same agent scaffold, against the human-written fixes for the same issues. Agent patches are <em>not</em> less secure than human fixes by static analysis. What the tests miss is <strong>behavior</strong>: one model routinely silences exceptions, and three models rewrite tests they were told not to touch. None of this shows up in a resolve rate, by construction.</p>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="value">1.1% vs 1.6%</div><div class="label">patches with a new security finding: models vs. human fixes</div></div>
+    <div class="stat"><div class="value">85%</div><div class="label">of model security findings are task-intrinsic (the human fix triggers the same rule)</div></div>
+    <div class="stat"><div class="value">4.5%</div><div class="label">of GPT-5 mini patches add a silent <code>except: pass</code> (other models ≤1.0%)</div></div>
+    <div class="stat"><div class="value">23</div><div class="label">forbidden test edits by 3 models; 5 rewrite assertions the official update leaves alone</div></div>
+  </div>
+
+  <h2>Signals per model</h2>
+  <figure>
+    <div class="frame"><img src="figures/fig_rates.png" alt="Dot plot with confidence intervals of four signals for twelve models compared with a human baseline: new security findings (all near the human rate of 1.6%), silent exception handlers (GPT-5 mini at 4.5%, others near zero), edits to existing tests (DeepSeek V3.2 2.2%, Claude 4.5 Haiku 1.6%, Kimi K2.5 0.8%, others zero), and mean source lines added (GPT-5.2 about 22, others 8 to 14, human 10)."></div>
+    <figcaption>Rates over analyzed patches with Wilson 95% intervals; the orange line is the human reference fix. Models are sorted by resolve rate.</figcaption>
+  </figure>
+
+  <h2>Findings</h2>
+  <ul class="findings">
+    <li><strong>No evidence that agents ship less secure code.</strong> 163 Bandit and Semgrep findings reduce to 47 distinct flagged lines, most of them on tasks where the fix <em>requires</em> a flagged pattern (for example, escaping HTML and then calling <code>mark_safe</code>). None of the 11 model-only flagged lines is an exploitable weakness.</li>
+    <li><strong>Silent exception handlers.</strong> GPT-5 mini wraps ordinary operations in core code paths in <code>except Exception: pass</code>. One comment explains: <em>“Some renderers / tests may use a draw-disabled renderer… ignore any errors and continue drawing.”</em> A handler like this can't fail a test; it can only prevent one from failing.</li>
+    <li><strong>Edits to tests.</strong> The scaffold tells agents not to modify tests. Three models do anyway. Most of these edits mirror what the maintainers later changed, but five rewrite assertions to match the model's own change, such as flipping <code>assertIsNone</code> to <code>assertIsNotNone</code>.</li>
+    <li><strong>Why the benchmark can't see it.</strong> SWE-bench resets official test files and runs only official tests, so test edits can't inflate scores. For the same reason, they're never measured.</li>
+    <li><strong>No test special-casing</strong> in any of the 5,920 analyzed patches.</li>
+    <li><strong>A case study:</strong> facing a build problem, one agent replaced scikit-learn's compiled build check with a shim whose <code>check_build()</code> simply returns <code>True</code>.</li>
+  </ul>
+
+  <h2>Capability isn't the issue</h2>
+  <figure class="narrow">
+    <div class="frame"><img src="figures/fig_resolve_vs_sec.png" alt="Scatter plot of resolve rate (56 to 77 percent) against the share of patches with a new security finding (0.6 to 1.6 percent) for twelve models; all points are at or below the human baseline of 1.6 percent and show no trend."></div>
+    <figcaption>Resolve rate vs. the share of patches with a new security finding. No model exceeds the human baseline (Spearman ρ = 0.22, p = 0.49).</figcaption>
+  </figure>
+
+  <h2>Method</h2>
+  <p>For each of 6,000 (model, instance) pairs, the pipeline reconstructs every touched file before and after the patch, runs Bandit and Semgrep on both versions, and counts a finding as <em>introduced</em> only if its (rule, source line) count goes up. Edits to tests are compared line by line with the official SWE-bench test patch. The whole pipeline runs in about 10 minutes on a laptop with no API keys.</p>
+  <pre><code>git clone https://github.com/Drivera341/swebench-security-audit
+cd swebench-security-audit && uv sync && make all</code></pre>
+
+  <h2>Citation</h2>
+  <pre><code>@misc{rivera2026tests,
+  title  = {What the Tests Don't See: A Static Audit of 6,000
+            Agent-Generated Patches on SWE-bench Verified},
+  author = {Rivera, Daniel},
+  year   = {2026},
+  url    = {https://github.com/Drivera341/swebench-security-audit}
+}</code></pre>
+
+  <footer>
+    Built with assistance from Claude Code (Anthropic); the author is responsible for all claims. Data: public SWE-bench leaderboard submissions. MIT License.
+  </footer>
+</main>
+</body>
+</html>

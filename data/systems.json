@@ -1,0 +1,98 @@
+{
+  "Claude 4.5 Haiku": {
+    "folder": "20260217_mini-v2.0.0_claude-4-5-haiku-high",
+    "resolved": 333,
+    "resolve_rate": 0.666,
+    "empty_patches": 1,
+    "report_mismatches": 2,
+    "resolved_source": "per_instance_details"
+  },
+  "Claude 4.5 Sonnet": {
+    "folder": "20260217_mini-v2.0.0_claude-4-5-sonnet-high",
+    "resolved": 357,
+    "resolve_rate": 0.714,
+    "empty_patches": 1,
+    "report_mismatches": 0,
+    "resolved_source": "per_instance_details"
+  },
+  "Claude 4.5 Opus": {
+    "folder": "20260217_mini-v2.0.0_claude-4-5-opus-high",
+    "resolved": 384,
+    "resolve_rate": 0.768,
+    "empty_patches": 8,
+    "report_mismatches": 0,
+    "resolved_source": "per_instance_details"
+  },
+  "Claude 4.6 Opus": {
+    "folder": "20260217_mini-v2.0.0_claude-4-6-opus",
+    "resolved": 378,
+    "resolve_rate": 0.756,
+    "empty_patches": 8,
+    "report_mismatches": 0,
+    "resolved_source": "per_instance_details"
+  },
+  "GPT-5 mini": {
+    "folder": "20260217_mini-v2.0.0_gpt-5-mini",
+    "resolved": 281,
+    "resolve_rate": 0.562,
+    "empty_patches": 22,
+    "report_mismatches": 0,
+    "resolved_source": "per_instance_details"
+  },
+  "GPT-5.2": {
+    "folder": "20260217_mini-v2.0.0_gpt-5-2-high",
+    "resolved": 364,
+    "resolve_rate": 0.728,
+    "empty_patches": 0,
+    "report_mismatches": 0,
+    "resolved_source": "per_instance_details"
+  },
+  "GPT-5.2 Codex": {
+    "folder": "20260219_mini-v2.0.0_gpt-5-2-codex",
+    "resolved": 364,
+    "resolve_rate": 0.728,
+    "empty_patches": 0,
+    "report_mismatches": 0,
+    "resolved_source": "report.json"
+  },
+  "Gemini 3 Flash": {
+    "folder": "20260217_mini-v2.0.0_gemini-3-flash-high",
+    "resolved": 379,
+    "resolve_rate": 0.758,
+    "empty_patches": 4,
+    "report_mismatches": 0,
+    "resolved_source": "per_instance_details"
+  },
+  "DeepSeek V3.2": {
+    "folder": "20260217_mini-v2.0.0_deepseek-3-2-high",
+    "resolved": 350,
+    "resolve_rate": 0.7,
+    "empty_patches": 1,
+    "report_mismatches": 0,
+    "resolved_source": "per_instance_details"
+  },
+  "GLM-5": {
+    "folder": "20260217_mini-v2.0.0_glm-5-high",
+    "resolved": 364,
+    "resolve_rate": 0.728,
+    "empty_patches": 12,
+    "report_mismatches": 0,
+    "resolved_source": "per_instance_details"
+  },
+  "Kimi K2.5": {
+    "folder": "20260217_mini-v2.0.0_kimi-k2-5-high",
+    "resolved": 354,
+    "resolve_rate": 0.708,
+    "empty_patches": 5,
+    "report_mismatches": 0,
+    "resolved_source": "per_instance_details"
+  },
+  "MiniMax M2.5": {
+    "folder": "20260217_mini-v2.0.0_minimax-2-5-high",
+    "resolved": 379,
+    "resolve_rate": 0.758,
+    "empty_patches": 4,
+    "report_mismatches": 0,
+    "resolved_source": "per_instance_details"
+  }
+}

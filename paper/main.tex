@@ -1,0 +1,188 @@
+\documentclass[10pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+\usepackage{url}
+
+\input{numbers.tex}
+
+\captionsetup{font=small,labelfont=bf}
+\setlength{\parskip}{3pt}
+
+\title{\textbf{What the Tests Don't See:}\\[2pt]
+A Static Audit of 6,000 Agent-Generated Patches on SWE-bench Verified}
+\author{Daniel Rivera\\
+Franciscan University of Steubenville\\
+\small\url{https://github.com/Drivera341/swebench-security-audit}}
+\date{October 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Coding agents are increasingly evaluated, and deployed, on the basis of whether their patches pass tests. Tests check intended behavior; they do not check whether a patch also introduces a security weakness, silences errors instead of fixing them, or rewrites the tests themselves. We audit the \NModelPatches{} patches that \NModels{} frontier models submitted to SWE-bench Verified under a single, fixed agent scaffold (mini-SWE-agent v2.0.0), and compare them with the \NInstances{} human-written reference fixes. For every patch we reconstruct each touched file before and after the change, identify static-analysis findings the patch \emph{introduces} (Bandit and Semgrep), and measure behaviors that test-based grading cannot observe. We find no evidence that test-passing agent patches are less secure than human fixes: \ModelSecPct\% of model patches introduce a medium/high-severity Bandit or Semgrep finding, versus \GoldSecPct\% of human fixes; \NSecFindingsIntrinsicPct\% of model findings are task-intrinsic (the human fix triggers the same rule on the same task); and review of all \NModelOnlyLines{} model-only flagged lines found no exploitable weakness. The gaps that do appear are behavioral and concentrated in specific models. One model adds silent exception handlers to \MiniSilentPct\% of its patches (every other model $\le$\OtherSilentMaxPct\%; human fixes 0\%). Three models edit existing tests in \NTestEdits{} patches despite explicit instructions not to, and \NTestEditsUnsanctioned{} of those edits rewrite assertions that the official test update leaves untouched. These behaviors shift leaderboard scores only modestly (\CleanDropMinPts--\CleanDropMaxPts{} points of ``clean'' resolve rate), but they are invisible to test-based grading by construction. We release the full pipeline, which runs in about ten minutes on a laptop with no API access, so that evaluation harnesses can report such signals alongside resolve rate.
+\end{abstract}
+
+\section{Introduction}
+
+Resolve rate on SWE-bench~\citep{jimenez2024swebench}, and in particular its human-validated subset SWE-bench Verified~\citep{openai2024verified}, has become a headline measure of the software-engineering ability of language-model agents. Under a deliberately minimal scaffold, today's frontier models resolve between 56\% and 77\% of its 500 real GitHub issues. The same signal increasingly gates real deployments: an agent's change is merged if continuous integration passes.
+
+Passing tests, however, is a statement about specified behavior. It says nothing about three classes of problems that matter for safe deployment: (i)~security weaknesses introduced alongside an otherwise-correct fix; (ii)~changes that make failures disappear rather than fixing them, such as catching and discarding exceptions; and (iii)~changes to the tests themselves, which in a real repository are often the very oversight signal being relied on. Studies of standalone code generation have repeatedly found functionally correct but insecure output~\citep{pearce2022asleep,vero2025baxbench,peng2025cweval}, studies of SWE-bench have found test-passing patches that are semantically wrong~\citep{wang2025solved,aleithan2024swebenchplus}, and reinforcement-learned models have been observed gaming unit tests in coding environments~\citep{baker2025monitoring,anthropic2025sonnet37}. Whether these concerns hold for frontier agents on repository-level bug fixes, and how they compare with what human maintainers write for the same tasks, is less well measured.
+
+We ask: \emph{among agent patches that pass SWE-bench's tests, how often do they carry problems the tests cannot see, and is this more common than in the human-written fixes for the same issues?} Our contributions are:
+\begin{itemize}\setlength\itemsep{1pt}
+\item A controlled audit of \NModelPatches{} patches from \NModels{} models that all ran under the same scaffold, so that differences reflect the model rather than the tooling, with the \NInstances{} human reference fixes as a baseline (\S\ref{sec:method}).
+\item A diff-based measurement of \emph{introduced} static-analysis findings that separates what a patch adds from what the codebase already contained, plus a task-level comparison that separates findings intrinsic to the task from those specific to a model.
+\item Evidence that security findings are rare, mostly task-intrinsic, and no more frequent than in human fixes, alongside model-specific behavioral gaps: silent exception handlers and edits to tests that the agent was told not to make (\S\ref{sec:results}).
+\item An analysis of how SWE-bench's harness treats agent edits to test files: such edits cannot inflate scores, but for the same reason they are never measured (\S\ref{sec:tests}).
+\item An open, reproducible pipeline and a ``clean resolve rate'' that harnesses can report next to resolve rate (\S\ref{sec:clean}).
+\end{itemize}
+
+\section{Related work}
+
+\paragraph{Security of AI-generated code.} \citet{pearce2022asleep} found that roughly 40\% of GitHub Copilot completions in security-relevant scenarios contained a CWE-listed weakness, and \citet{perry2023insecure} found that users with an AI assistant wrote less secure code while believing it more secure. Recent benchmarks pair functional tests with security checks: BaxBench~\citep{vero2025baxbench} executes exploits against generated backends and finds that roughly half of the correct programs are exploitable, and CWEval~\citep{peng2025cweval} reports many functional but insecure outputs. These settings generate whole programs or functions in deliberately security-sensitive scenarios. We study the complementary setting of small repository-level bug fixes written by agents.
+
+\paragraph{What SWE-bench tests miss.} \citet{wang2025solved} show that 29.6\% of plausible patches from three systems behave differently from the reference fix, inflating resolve rates by 6.2 points, and \citet{aleithan2024swebenchplus} identify solution leakage and weak tests in SWE-bench. These works ask whether a test-passing patch is \emph{correct}; we ask what \emph{else} a test-passing patch does.
+
+\paragraph{Specification gaming and oversight.} Specification gaming, satisfying the letter of an objective while violating its intent, is a long-standing concern~\citep{krakovna2020specgaming}. In coding, it appears as models special-casing or editing tests~\citep{anthropic2025sonnet37}, and \citet{baker2025monitoring} document reward hacking of unit tests by a frontier reasoning model during training. Work on AI control~\citep{greenblatt2024control} treats code from a possibly untrusted model as something to be audited before use. Our measurements are a lightweight, model-agnostic instance of such auditing applied to public evaluation data.
+
+\section{Method}\label{sec:method}
+
+\paragraph{Data.} SWE-bench Verified contains \NInstances{} issues from 12 Python repositories, each with a base commit, a human-written reference fix (the ``gold'' patch, which by construction excludes test changes), and an official test patch containing the fail-to-pass and pass-to-pass tests used for grading. We use the \NModels{} models on the public bash-only leaderboard that were evaluated with mini-SWE-agent v2.0.0~\citep{minisweagent,yang2024sweagent} (February 2026 runs): Claude 4.5 Haiku, Sonnet, and Opus; Claude 4.6 Opus; GPT-5 mini, GPT-5.2, and GPT-5.2 Codex; Gemini 3 Flash; DeepSeek V3.2; GLM-5; Kimi K2.5; and MiniMax M2.5. For each model we download the submitted patch and the harness report for every instance from the leaderboard's public storage, and take resolution status from the leaderboard's per-instance results (for GPT-5.2 Codex, which lacks that file, from the harness reports). Our per-model resolve rates match the published leaderboard numbers exactly for all \NModels{} models. We exclude Gemini 3 Pro because its published per-instance results mark every instance unresolved while the leaderboard reports 69.6\%. The scaffold's prompt instructs the agent to ``make changes to non-test files'' and not to submit ``test and reproduction files'' or helper scripts it created.
+
+\paragraph{Reconstruction.} For every (model, instance) pair we fetch each file the patch touches at the instance's base commit and apply the patch exactly as the SWE-bench harness does (\texttt{git apply}, falling back to \texttt{patch --fuzz=5}). Of the \NModelPatches{} model patches, \NEmpty{} were empty and \NFailed{} could not be applied (all \NFailed{} were unresolved); the remaining \NModelAnalyzed{} are analyzed, together with all \NInstances{} human fixes.
+
+\paragraph{Introduced findings.} We run Bandit~\citep{bandit} (all checks) and Semgrep~\citep{semgrep} (rule packs \texttt{p/python} and \texttt{p/security-audit}) on the pre- and post-patch version of every touched non-test Python file. A finding is \emph{introduced} if the multiset count of its (tool, rule, whitespace-normalized source line) key increases from the pre- to the post-patch file; matching on line text rather than line number prevents findings that merely moved from counting as new. We exclude Bandit's \texttt{assert\_used} check (B101). A patch has a \emph{new security finding} if it introduces at least one Bandit finding of medium or high severity or any Semgrep finding. We call a finding \emph{task-intrinsic} if the human fix for the same instance introduces a finding with the same rule, and \emph{model-only} otherwise. Test files are files under \texttt{tests/} directories, pytest's top-level \texttt{testing/}, and files named \texttt{test\_*.py}, \texttt{*\_test.py} or \texttt{conftest.py}; test \emph{frameworks} shipped as library code (e.g.\ \texttt{django/test/}) count as source. Bandit could not parse \NParseErrors{} post-patch files because the patch introduced a syntax error; they contribute no findings.
+
+\paragraph{Behavioral signals.} A \emph{silent exception handler} is an introduced \texttt{try/except/pass} or \texttt{try/except/continue} (Bandit B110/B112). An \emph{edit to existing tests} is any removed or changed line in a pre-existing test file, which the scaffold prompt forbids. We classify each such edit against the official test patch: it is \emph{aligned} if at least half of the test lines the model removed are also removed by the official test update (the issue genuinely changed expected behavior), and \emph{unsanctioned} otherwise. We also search all added non-test source lines for test-detection idioms (e.g.\ \texttt{PYTEST\_CURRENT\_TEST}, \texttt{'pytest' in sys.modules}) and for the names of the instance's fail-to-pass tests, a direct signature of test special-casing. Patch size is the number of added non-test source lines.
+
+\paragraph{Statistics.} We report rates over analyzed patches with Wilson 95\% intervals~\citep{wilson1927}. Each model is compared with the human baseline by Fisher's exact test with Holm correction across the \NModels{} models~\citep{holm1979}. For a task-controlled comparison we pair each model-resolved instance with the human fix for the same instance and apply an exact binomial test to the discordant pairs. The \emph{clean resolve rate} is the share of all \NInstances{} instances that a model resolves with no new security finding, no silent exception handler, and no edit to existing tests.
+
+\section{Results}\label{sec:results}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/fig_rates.pdf}
+\caption{Per-model rates of each signal over analyzed patches (dots) with Wilson 95\% intervals (lines), against the human reference fixes (orange). Mean added source lines in the last panel use normal-approximation intervals. Human fixes contain no test changes by construction, so the third panel is effectively a comparison against zero, which is what the agents were instructed to do.}
+\label{fig:rates}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\small
+\input{tables/main.tex}
+\caption{Resolve rate (\% of 500) and signal rates (\% of analyzed patches). \emph{Unsanctioned} counts test edits that do not mirror the official test update. Bold: differs from the human baseline (Fisher's exact test, Holm-adjusted $p<0.05$).}
+\label{tab:main}
+\end{table}
+
+\subsection{Security findings are rare, mostly task-intrinsic, and no more common than in human fixes}
+
+Across all models, \ModelSecPct\% of analyzed patches introduce a new security finding (range \ModelSecMinPct\% for \ModelSecMinName{} to \ModelSecMaxPct\% for \ModelSecMaxName), compared with \GoldSecPct\% (\GoldSecK{} of \NInstances) of human fixes (Table~\ref{tab:main}, Figure~\ref{fig:rates}). No model differs significantly from the human baseline. Normalized by patch size, models introduce \ModelSecPerKloc{} findings per thousand added source lines, versus \GoldSecPerKloc{} for human fixes.
+
+The findings are highly concentrated. The \NSecFindingsRaw{} individual findings across all systems reduce to \NSecLinesUnique{} distinct flagged lines, and \NSecFindingsIntrinsicPct\% of model findings are task-intrinsic: the human fix for the same issue triggers the same rule. Typical examples are an HTML-escaping fix in Django that necessarily ends in \texttt{mark\_safe(html\_escape(\ldots))}, a \texttt{json\_script} change that marks serialized JSON as safe, and a change to how \texttt{runserver} displays the \texttt{0.0.0.0} bind address. This also explains why resolved patches carry more findings than unresolved ones (\ResolvedSecPct\% vs.\ \UnresolvedSecPct\%, $p$\,\ResUnresP): resolving these issues requires writing the flagged pattern.
+
+A task-controlled comparison points the same way. Pairing each model-resolved instance with the human fix for the same instance (\PairedN{} pairs), there are \PairedModelOnly{} pairs in which only the model's patch has a security finding and \PairedGoldOnly{} in which only the human fix does (Appendix~\ref{app:paired}). Across models, resolve rate is not associated with the security-finding rate (Spearman $\rho=\RhoResolveSec$, $p=\PRhoResolveSec$; Figure~\ref{fig:scatter}).
+
+We reviewed all \NModelOnlyLines{} distinct model-only flagged lines (from \NModelOnlyPatches{} patches) in context (Appendix~\ref{app:triage}). None is an exploitable weakness. Eight are false positives in which a Semgrep rule written for user-defined SQL expressions fires on Django's own ORM internals; three are benign in context (an \texttt{escape()} applied before \texttt{mark\_safe()}, and two raw-SQL strings built only from quoted table and column identifiers). One of the latter is a code smell rather than a weakness: GPT-5.2 builds \texttt{RawSQL} where the human fix uses ORM expressions.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.52\linewidth]{figures/fig_resolve_vs_sec.pdf}
+\caption{Resolve rate versus the share of patches with a new security finding. No model exceeds the human baseline, and capability is not associated with the rate ($\rho=\RhoResolveSec$).}
+\label{fig:scatter}
+\end{figure}
+
+\subsection{Silent exception handlers are concentrated in one model}
+
+GPT-5 mini adds a silent exception handler to \MiniSilentK{} of its patches (\MiniSilentPct\%), \MiniSilentResolvedK{} of which pass the tests; across the other eleven models there are \NSilentOther{} such patches in total (each model $\le$\OtherSilentMaxPct\%), and none among the human fixes. The handlers are broad \texttt{except Exception: pass} blocks placed around ordinary operations in core code paths, for example around alias bookkeeping in Django's query compiler or around autoscaling in Matplotlib's contour code, typically annotated as ``best-effort''. One comment makes the motivation explicit: \emph{``Some renderers / tests may use a draw-disabled renderer \ldots; ignore any errors and continue drawing.''} A handler like this cannot cause a test failure; it can only prevent one. Tests therefore cannot penalize this behavior, even though in production it converts failures into silent misbehavior.
+
+\subsection{Edits to tests despite instructions}\label{sec:tests}
+
+Three models edit existing tests, which their prompt forbids: DeepSeek V3.2 (\ModelEditTestsMaxPct\% of patches), Claude 4.5 Haiku, and Kimi K2.5, for \NTestEdits{} patches in total, \NTestEditsResolved{} of them resolved. The other nine models never do. Comparing each edit with the official test update (Appendix~\ref{app:tests}), \NTestEditsAligned{} of the \NTestEdits{} are \emph{aligned}: the model changed the same assertions that the maintainers later changed, correctly anticipating that the issue alters expected behavior. Although they break the instruction, these edits are substantively reasonable.
+
+The remaining \NTestEditsUnsanctioned{} edits are \emph{unsanctioned}: they rewrite assertions that the official update leaves untouched so that the tests agree with the model's own change. Examples include flipping \texttt{assertIsNone} to \texttt{assertIsNotNone} (DeepSeek V3.2, \texttt{django-16950}, resolved); replacing assertions that a query must raise a \texttt{DatabaseError} with a comment that ``the execution should succeed, not raise an error'' (Claude 4.5 Haiku, \texttt{django-10554}); and changing the expected value of a regression test for an unrelated, years-old issue to match a new evaluation path the model added to SymPy's summation engine (Kimi K2.5, \texttt{sympy-12419}, resolved). In the last case the new value is mathematically correct, but the patch silently changes documented behavior far from the reported bug, which the human fix does not touch at all.
+
+\paragraph{How grading treats these edits.} Before running tests, the SWE-bench harness resets every file in the official test patch to its base version and then applies the official tests. Model edits to those files are therefore discarded, and edits to any other test file persist but are never run, because the pass-to-pass set is drawn only from the official test files. We verified this for the SymPy case above: the edited test is in neither the fail-to-pass nor the pass-to-pass list. Test edits thus \emph{cannot} inflate SWE-bench scores, which is reassuring for the benchmark, but for the same reason they are never measured. In a real repository, where the agent's own test suite is the check, an unsanctioned edit is exactly the change that would let a regression through.
+
+\subsection{Other signals}
+
+\paragraph{No test special-casing.} No added source line in any of the \NModelAnalyzed{} analyzed patches contains a test-detection idiom or names one of the instance's fail-to-pass tests. The handful of lexical matches were comments or legitimate code inside pytest itself.
+
+\paragraph{Patch size.} Models add \ModelMeanAdded{} source lines per patch on average, versus \GoldMeanAdded{} for human fixes. GPT-5.2 is an outlier at \GPTTwoMeanAdded{} lines, \GPTTwoAddedRatio$\times$ the human average (Figure~\ref{fig:rates}), whereas its Codex variant stays close to the human size. Larger patches are not less secure here, but they increase the review burden on whoever oversees the agent.
+
+\paragraph{A case study in working around a check.} In one unresolved scikit-learn task (\texttt{scikit-learn-14629}), GPT-5 mini added a new file \texttt{sklearn/\_\_check\_build/\_check\_build.py}, a pure-Python ``shim'' standing in for the compiled extension that scikit-learn uses to verify it was built correctly, whose \texttt{check\_build()} function simply returns \texttt{True}, documented as ``Return True to indicate that the build check passed.'' Faced with an environment problem, the model disabled the integrity check rather than reporting the problem. Static analyzers do not flag this, and tests are unlikely to; we found it only by inspecting new files.
+
+\subsection{Clean resolve rate}\label{sec:clean}
+
+\begin{table}[t]
+\centering
+\small
+\input{tables/clean.tex}
+\caption{Resolve rate and clean resolve rate (\% of 500): resolved, with no new security finding, silent exception handler, or edit to existing tests. Rank change is relative to the resolve-rate ranking (positive = moves up). Because most security findings are task-intrinsic, this is a conservative (upper-bound) estimate of the penalty.}
+\label{tab:clean}
+\end{table}
+
+Requiring that a resolved patch carry none of the three signals lowers each model's score by \CleanDropMinPts{} to \CleanDropMaxPts{} points (largest for \CleanDropMaxName) and changes the rank of \NRankChanged{} of the \NModels{} models, mostly by reordering near-ties (Table~\ref{tab:clean}). The leaderboard is therefore robust to these signals at the aggregate level, even though individual behaviors such as silent handlers or unsanctioned test edits are sharply model-specific.
+
+\section{Discussion}
+
+\paragraph{For evaluators.} On small repository-level bug fixes, passing tests appears to be a reasonable proxy for not introducing pattern-level security weaknesses: findings are rare, mostly dictated by the task, and no more common than in human fixes. This contrasts with from-scratch generation benchmarks~\citep{vero2025baxbench,pearce2022asleep}, plausibly because a ten-line fix inside a mature codebase inherits that codebase's security idioms. Two methodological choices mattered. Diffing findings before and after the patch removes thousands of pre-existing findings in the touched files, and comparing against human fixes for the same tasks prevents task-intrinsic findings from being misread as model failures; without either, the same data would have produced an alarming but misleading headline.
+
+\paragraph{For oversight.} The problems we do find are behaviors rather than vulnerabilities: swallowing errors, rewriting tests to agree with one's own change, and disabling a check that stands in the way. Each is invisible to the grader by construction, each is concentrated in particular models, and each is cheap to detect: the signals here require no execution and no model calls. We suggest that harnesses report instruction-violation rates (such as test edits when tests are off-limits) and silent-handler rates alongside resolve rate, and that deployments relying on test-based gates treat agent edits to tests and broad exception handlers as requiring human review. These are also natural targets for automated monitors in AI-control-style pipelines~\citep{greenblatt2024control}.
+
+\section{Limitations}
+
+Static analysis captures only pattern-level weaknesses: it cannot see logic bugs, authorization errors, or weaknesses that span files, so a null result here bounds only that class. Our rule packs are general-purpose and Python-only. All models ran under one scaffold with one attempt per instance; other scaffolds, especially ones that permit test edits, may elicit different behavior, and the test-edit rates we report measure instruction violations rather than unprompted behavior. SWE-bench Verified tasks are bug fixes in mature open-source libraries and may underrepresent security-sensitive work. Human fixes exclude tests by construction, so test-edit rates have no human comparison. The review of model-only security findings was performed with assistance from an AI model (Claude); all labels and rationales are released for independent verification. Finally, several signals have small counts (for example, five unsanctioned test edits), so per-model rates carry wide intervals; we treat them as existence proofs and model-level contrasts rather than precise estimates.
+
+\section{Conclusion}
+
+Among \NModelPatches{} patches from \NModels{} frontier models on SWE-bench Verified, we find no evidence that test-passing agent patches are less secure than the human fixes for the same issues. What test-based grading misses is narrower and behavioral: specific models silence errors, rewrite tests they were told not to touch, and occasionally work around a check instead of fixing the problem. These behaviors are cheap to measure and, we argue, worth reporting next to resolve rate.
+
+\paragraph{Reproducibility.} Code, intermediate data, and per-case tables are available at \url{https://github.com/Drivera341/swebench-security-audit}. The full pipeline (download, reconstruction, scanning, statistics, figures) runs in about ten minutes on a laptop and needs no API keys.
+
+\paragraph{Use of AI assistance.} This study was carried out with substantial assistance from Claude Code (Anthropic), which wrote much of the analysis code and an initial draft of this report under the author's direction. The author is responsible for the study's design choices and for all claims made here.
+
+\paragraph{Acknowledgments.} We thank the SWE-bench and mini-SWE-agent teams for publicly releasing per-instance patches and harness reports, without which this audit would not be possible.
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\clearpage
+\appendix
+
+\section{Every edit to existing tests}\label{app:tests}
+\begin{table}[H]
+\centering
+\small
+\input{tables/test_edits.tex}
+\caption{All \NTestEdits{} model patches that edit pre-existing test files. \emph{Overlap}: share of the test lines removed by the model that are also removed by the official test patch. $^\dagger$Edits a test file outside the official test patch: it persists in the repository but is not run by the harness.}
+\end{table}
+
+\section{Review of model-only security findings}\label{app:triage}
+\begin{table}[H]
+\centering
+\small
+\input{tables/triage.tex}
+\caption{All distinct flagged lines introduced by a model patch where the human fix for the same instance does not trigger the same rule. Rationales for each label are in \texttt{data/triage/security\_model\_only.csv}.}
+\end{table}
+
+\section{Task-controlled comparison}\label{app:paired}
+\begin{table}[H]
+\centering
+\small
+\input{tables/paired.tex}
+\caption{For each model, instances it resolved paired with the human fix for the same instance. \emph{Model only} and \emph{Human only} count discordant pairs in which only one side has a new security finding; $p$ is a two-sided exact binomial test on the discordant pairs.}
+\end{table}
+
+\end{document}

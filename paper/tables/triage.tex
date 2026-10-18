@@ -1,0 +1,17 @@
+\begin{tabular}{llll}
+\toprule
+Model & Instance & Rule & Label \\
+\midrule
+Claude 4.5 Haiku & \texttt{django\_\_django-14170} & \texttt{custom-expression-as-sql} & false positive \\
+Claude 4.5 Haiku & \texttt{django\_\_django-16877} & \texttt{django\_mark\_safe} & benign in context \\
+Claude 4.5 Sonnet & \texttt{django\_\_django-15161} & \texttt{extends-custom-expression} & false positive \\
+Claude 4.5 Sonnet & \texttt{django\_\_django-15161} & \texttt{extends-custom-expression} & false positive \\
+Claude 4.5 Sonnet & \texttt{django\_\_django-15161} & \texttt{extends-custom-expression} & false positive \\
+GPT-5.2 & \texttt{django\_\_django-12858} & \texttt{custom-expression-as-sql} & false positive \\
+GPT-5.2 & \texttt{django\_\_django-15957} & \texttt{django\_rawsql\_used} & benign; code smell \\
+GPT-5.2 & \texttt{django\_\_django-16901} & \texttt{custom-expression-as-sql} & false positive \\
+GPT-5.2 Codex & \texttt{django\_\_django-11885} & \texttt{custom-expression-as-sql} & false positive \\
+GPT-5.2 Codex & \texttt{django\_\_django-16901} & \texttt{custom-expression-as-sql} & false positive \\
+Kimi K2.5 & \texttt{django\_\_django-12965} & \texttt{hardcoded\_sql\_expressions} & benign in context \\
+\bottomrule
+\end{tabular}
